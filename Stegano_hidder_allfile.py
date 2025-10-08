@@ -297,12 +297,12 @@ def save():
         messagebox.showerror("Error", "No hidden data to save!")
 
 #icon
-image_icon=PhotoImage(file="E:\VS code\Projects\project data for stegano\logo.jpg")
+image_icon=PhotoImage(file="./images.png")
 root.iconphoto(False,image_icon)
 
 
 #logo
-logo=PhotoImage(file="E:\VS code\Projects\project data for stegano\logo.png")
+logo=PhotoImage(file="./images.png")
 Label(root,image=logo,bg="#2f4155").place(x=10,y=0)
 Label(root,text="CYBER SCIENCE",bg="#2f4155",fg="white",font="arial 25 bold").place(x=100,y=20)
 

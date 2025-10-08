@@ -1,0 +1,10 @@
+pillow
+stegano
+opencv-python
+pandas
+python-docx
+PyPDF2
+python-pptx
+openpyxl
+pygame
+numpy
