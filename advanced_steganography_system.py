@@ -113,6 +113,7 @@ class AdvancedSteganographySystem:
         # File and Data Management
         self.selected_file = None           # Path to currently selected file for processing
         self.hidden_data_image = None       # Stores image data with hidden message embedded
+        self.hidden_data_audio = None       # Stores audio data with hidden message embedded
         self.encryption_key = None          # Stores encryption key for current session
         
         # Operation Tracking
@@ -585,6 +586,18 @@ class AdvancedSteganographySystem:
         
         tk.Button(
             btn_frame,
+            text="💾 Save Encrypted File",
+            command=self.save_result,
+            font=("Segoe UI", 10, "bold"),
+            bg="#2ecc71",
+            fg="white",
+            padx=20,
+            pady=10,
+            relief="flat"
+        ).pack(pady=2, fill="x")
+        
+        tk.Button(
+            btn_frame,
             text="� Open Output Folder",
             command=self.open_output_folder,
             font=("Segoe UI", 10),
@@ -1032,6 +1045,16 @@ class AdvancedSteganographySystem:
             encrypted_message (bytes): The encrypted message data to hide
         """
         # ====================================================================
+        # INPUT VALIDATION
+        # ====================================================================
+        
+        if not self.selected_file:
+            raise ValueError("No image file selected. Please select an image file first.")
+            
+        if not os.path.exists(self.selected_file):
+            raise ValueError(f"Selected file does not exist: {self.selected_file}")
+        
+        # ====================================================================
         # LSB IMPLEMENTATION SELECTION
         # ====================================================================
         
@@ -1057,6 +1080,9 @@ class AdvancedSteganographySystem:
             
             # Load image using OpenCV (loads as BGR format)
             img = cv2.imread(self.selected_file)        # Read image into numpy array
+            
+            if img is None:
+                raise ValueError(f"Could not load image file: {self.selected_file}. Please ensure it's a valid image format.")
             
             # Convert encrypted message bytes to binary representation
             message_bits = ''.join(format(byte, '08b') for byte in encrypted_message)
@@ -1100,59 +1126,87 @@ class AdvancedSteganographySystem:
             encrypted_message (bytes): The encrypted message data to hide in audio
         """
         # ====================================================================
+        # INPUT VALIDATION
+        # ====================================================================
+        
+        if not self.selected_file:
+            raise ValueError("No audio file selected. Please select an audio file first.")
+            
+        if not os.path.exists(self.selected_file):
+            raise ValueError(f"Selected file does not exist: {self.selected_file}")
+            
+        # ====================================================================
         # AUDIO FILE READING AND PREPARATION
         # ====================================================================
         
-        # Open WAV audio file in read-binary mode
-        with wave.open(self.selected_file, 'rb') as audio:
-            # Read all audio frames as binary data
-            frames = audio.readframes(audio.getnframes())  # Get all audio samples
-            
-            # Convert binary audio data to numpy array of 16-bit signed integers
-            # Each integer represents one audio sample value
-            audio_data = np.frombuffer(frames, dtype=np.int16)
-            
-            # ================================================================
-            # MESSAGE PREPARATION FOR HIDING
-            # ================================================================
-            
-            # Convert encrypted message bytes to binary string representation
-            # Each byte becomes 8 characters of '0' and '1'
-            message_bits = ''.join(format(byte, '08b') for byte in encrypted_message)
-            
-            # Append end-of-message marker for extraction identification
-            # Pattern: 1111111111111110 (easily recognizable 16-bit sequence)
-            message_bits += '1111111111111110'          # End marker for detection
-            
-            # ================================================================
-            # CAPACITY CHECK
-            # ================================================================
-            
-            if len(message_bits) > len(audio_data):
-                raise ValueError(f"Message too large: {len(message_bits)} bits needed, "
-                               f"but only {len(audio_data)} audio samples available")
-            
-            # ================================================================
-            # LSB HIDING PROCESS
-            # ================================================================
-            
-            # Hide each message bit in the LSB of consecutive audio samples
-            for i, bit in enumerate(message_bits):
-                if i < len(audio_data):                 # Safety check for array bounds
-                    # Clear LSB of audio sample and set to message bit
-                    # (sample & ~1) clears LSB, | int(bit) sets new LSB value
-                    audio_data[i] = (audio_data[i] & ~1) | int(bit)
-            
-            # ================================================================
-            # STORE MODIFIED AUDIO DATA
-            # ================================================================
-            
-            # Store modified audio data and parameters for later file saving
-            self.hidden_data_audio = {
-                'data': audio_data,                     # Modified audio sample array
-                'params': audio.getparams(),            # Original audio parameters
-                'original_file': self.selected_file     # Reference to source file
-            }
+        try:
+            # Open WAV audio file in read-binary mode
+            with wave.open(self.selected_file, 'rb') as audio:
+                # Read all audio frames as binary data
+                frames = audio.readframes(audio.getnframes())  # Get all audio samples
+                
+                # Convert binary audio data to numpy array of 16-bit signed integers
+                # Each integer represents one audio sample value
+                audio_data = np.frombuffer(frames, dtype=np.int16)
+                
+                # ================================================================
+                # MESSAGE PREPARATION FOR HIDING
+                # ================================================================
+                
+                # Convert encrypted message bytes to binary string representation
+                # Each byte becomes 8 characters of '0' and '1'
+                message_bits = ''.join(format(byte, '08b') for byte in encrypted_message)
+                
+                # Append end-of-message marker for extraction identification
+                # Pattern: 1111111111111110 (easily recognizable 16-bit sequence)
+                message_bits += '1111111111111110'          # End marker for detection
+                
+                # ================================================================
+                # CAPACITY CHECK
+                # ================================================================
+                
+                if len(message_bits) > len(audio_data):
+                    raise ValueError(f"Message too large: {len(message_bits)} bits needed, "
+                                   f"but only {len(audio_data)} audio samples available")
+                
+                # ================================================================
+                # LSB HIDING PROCESS
+                # ================================================================
+                
+                # Hide each message bit in the LSB of consecutive audio samples
+                for i, bit in enumerate(message_bits):
+                    if i < len(audio_data):                 # Safety check for array bounds
+                        # Clear LSB of audio sample and set to message bit
+                        # (sample & ~1) clears LSB, | int(bit) sets new LSB value
+                        audio_data[i] = (audio_data[i] & ~1) | int(bit)
+                
+                # ================================================================
+                # SAVE MODIFIED AUDIO TO FILE
+                # ================================================================
+                
+                # Generate output filename for encrypted audio
+                base_name = os.path.splitext(os.path.basename(self.selected_file))[0]
+                output_dir = os.path.dirname(self.selected_file)
+                output_filename = os.path.join(output_dir, f"{base_name}_encrypted.wav")
+                
+                # Write modified audio data to new WAV file
+                with wave.open(output_filename, 'wb') as output_audio:
+                    # Set audio parameters (same as original)
+                    output_audio.setparams(audio.getparams())
+                    
+                    # Write modified audio sample data
+                    output_audio.writeframes(audio_data.tobytes())
+                
+                # Store reference to created file for later operations
+                self.hidden_data_audio = {
+                    'data': audio_data,                     # Modified audio sample array
+                    'params': audio.getparams(),            # Original audio parameters
+                    'original_file': self.selected_file,    # Reference to source file
+                    'output_file': output_filename          # Path to encrypted audio file
+                }
+                
+        except Exception as e:
+            raise ValueError(f"Error processing audio file: {str(e)}")
     
     def hide_echo_audio(self, encrypted_message):
         """Hide message using echo hiding (placeholder)"""
@@ -1172,6 +1226,16 @@ class AdvancedSteganographySystem:
             bytes or str: The extracted hidden message data, or None if no message found
         """
         # ====================================================================
+        # INPUT VALIDATION
+        # ====================================================================
+        
+        if not self.selected_file:
+            raise ValueError("No image file selected. Please select an encrypted image file first.")
+            
+        if not os.path.exists(self.selected_file):
+            raise ValueError(f"Selected file does not exist: {self.selected_file}")
+        
+        # ====================================================================
         # LSB EXTRACTION IMPLEMENTATION SELECTION
         # ====================================================================
         
@@ -1180,12 +1244,21 @@ class AdvancedSteganographySystem:
             # EXTERNAL LIBRARY EXTRACTION (STEGANO)
             # ================================================================
             
-            # Use external stegano library for LSB message extraction
-            from stegano import lsb
-            
-            # Extract hidden message from image using stegano's LSB reveal function
-            # Returns string if message found, None if no message detected
-            return lsb.reveal(self.selected_file)       # Automatic LSB bit extraction
+            try:
+                # Use external stegano library for LSB message extraction
+                from stegano import lsb
+                
+                # Extract hidden message from image using stegano's LSB reveal function
+                # Returns string if message found, None if no message detected
+                result = lsb.reveal(self.selected_file)  # Automatic LSB bit extraction
+                return result
+            except Exception as e:
+                # Handle "Impossible to detect message" and other stegano errors
+                error_msg = str(e).lower()
+                if "impossible to detect" in error_msg or "no message" in error_msg:
+                    return None  # No message found
+                else:
+                    raise e  # Re-raise other errors
             
         else:
             # ================================================================
@@ -1245,58 +1318,76 @@ class AdvancedSteganographySystem:
             bytes: The extracted hidden message data, or None if no message found
         """
         # ====================================================================
+        # INPUT VALIDATION
+        # ====================================================================
+        
+        if not self.selected_file:
+            raise ValueError("No audio file selected. Please select an encrypted audio file first.")
+            
+        if not os.path.exists(self.selected_file):
+            raise ValueError(f"Selected file does not exist: {self.selected_file}")
+            
+        # ====================================================================
         # AUDIO FILE READING
         # ====================================================================
         
-        # Open audio file containing hidden data
-        with wave.open(self.selected_file, 'rb') as audio:
-            # Read all audio frames as binary data
-            frames = audio.readframes(audio.getnframes())
+        try:
+            # Open audio file containing hidden data
+            with wave.open(self.selected_file, 'rb') as audio:
+                # Read all audio frames as binary data
+                frames = audio.readframes(audio.getnframes())
+                
+                # Convert binary data to numpy array of 16-bit signed integers
+                audio_data = np.frombuffer(frames, dtype=np.int16)
+                
+                # ================================================================
+                # LSB EXTRACTION PROCESS
+                # ================================================================
+                
+                # Extract LSB from each audio sample to reconstruct hidden message
+                # Each sample's LSB becomes one bit of the hidden message
+                binary_message = ''.join(str(sample & 1) for sample in audio_data)
+                
+                # ================================================================
+                # END MARKER DETECTION
+                # ================================================================
+                
+                # Look for the end-of-message marker pattern
+                end_marker = '1111111111111110'             # 16-bit end marker pattern
+                end_pos = binary_message.find(end_marker)   # Find marker position
+                
+                if end_pos == -1:
+                    return None                             # No valid message found
+                
+                # Extract only the message portion (before end marker)
+                binary_message = binary_message[:end_pos]   # Trim to message length
             
-            # Convert binary data to numpy array of 16-bit signed integers
-            audio_data = np.frombuffer(frames, dtype=np.int16)
-            
-            # ================================================================
-            # LSB EXTRACTION PROCESS
-            # ================================================================
-            
-            # Extract LSB from each audio sample to reconstruct hidden message
-            # Each sample's LSB becomes one bit of the hidden message
-            binary_message = ''.join(str(sample & 1) for sample in audio_data)
-            
-            # ================================================================
-            # END MARKER DETECTION
-            # ================================================================
-            
-            # Look for the end-of-message marker pattern
-            end_marker = '1111111111111110'             # 16-bit end marker pattern
-            end_pos = binary_message.find(end_marker)   # Find marker position
-            
-            if end_pos == -1:
-                return None                             # No valid message found
-            
-            # Extract only the message portion (before end marker)
-            binary_message = binary_message[:end_pos]   # Trim to message length
-            
-            # ================================================================
-            # BINARY TO BYTES CONVERSION
-            # ================================================================
-            
-            # Convert binary string back to original bytes
-            message_bytes = bytearray()                 # Byte array for reconstruction
-            
-            # Process binary string in 8-bit groups (bytes)
-            for i in range(0, len(binary_message), 8):
-                if i + 8 <= len(binary_message):        # Ensure complete byte available
-                    byte_bits = binary_message[i:i+8]   # Extract 8-bit group
-                    byte_value = int(byte_bits, 2)      # Convert binary to integer
-                    message_bytes.append(byte_value)    # Add byte to message
-            
-            return bytes(message_bytes)                 # Return reconstructed message
+                # ================================================================
+                # BINARY TO BYTES CONVERSION
+                # ================================================================
+                
+                # Convert binary string back to original bytes
+                message_bytes = bytearray()                 # Byte array for reconstruction
+                
+                # Process binary string in 8-bit groups (bytes)
+                for i in range(0, len(binary_message), 8):
+                    if i + 8 <= len(binary_message):        # Ensure complete byte available
+                        byte_bits = binary_message[i:i+8]   # Extract 8-bit group
+                        byte_value = int(byte_bits, 2)      # Convert binary to integer
+                        message_bytes.append(byte_value)    # Add byte to message
+                
+                return bytes(message_bytes)                 # Return reconstructed message
+                
+        except Exception as e:
+            raise ValueError(f"Error processing audio file: {str(e)}")
     
     def save_result(self):
         """Save the encrypted file with user-chosen location"""
-        if not self.hidden_data_image and not self.selected_file:
+        if not hasattr(self, 'hidden_data_image') and not hasattr(self, 'hidden_data_audio'):
+            self.hidden_data_image = None
+            self.hidden_data_audio = None
+            
+        if not self.hidden_data_image and not self.hidden_data_audio and not self.selected_file:
             messagebox.showerror("Error", "No encrypted data to save! Please encrypt a message first.")
             return
         
@@ -1315,7 +1406,7 @@ class AdvancedSteganographySystem:
                         ("JPEG files", "*.jpg"),
                         ("All files", "*.*")
                     ],
-                    initialname=f"{os.path.splitext(os.path.basename(self.selected_file))[0]}_encrypted.png"
+                    initialfile=f"{os.path.splitext(os.path.basename(self.selected_file))[0]}_encrypted.png"
                 )
                 
                 if save_path:
@@ -1329,9 +1420,13 @@ class AdvancedSteganographySystem:
                     messagebox.showinfo("Success", f"Encrypted file saved successfully!\n\nLocation: {save_path}")
                     
             elif self.selected_file and self.selected_file.lower().endswith('.wav'):
-                # For audio files, check if encrypted file exists
-                base_name = os.path.splitext(os.path.basename(self.selected_file))[0]
-                default_encrypted = os.path.join(os.path.dirname(self.selected_file), f"{base_name}_encrypted.wav")
+                # For audio files, check if hidden_data_audio exists with output file
+                if hasattr(self, 'hidden_data_audio') and self.hidden_data_audio and 'output_file' in self.hidden_data_audio:
+                    default_encrypted = self.hidden_data_audio['output_file']
+                else:
+                    # Fallback: try to find the encrypted file by name
+                    base_name = os.path.splitext(os.path.basename(self.selected_file))[0]
+                    default_encrypted = os.path.join(os.path.dirname(self.selected_file), f"{base_name}_encrypted.wav")
                 
                 if os.path.exists(default_encrypted):
                     # Ask user where to save
@@ -1339,7 +1434,7 @@ class AdvancedSteganographySystem:
                         title="Save Encrypted Audio File",
                         defaultextension=".wav",
                         filetypes=[("WAV files", "*.wav"), ("All files", "*.*")],
-                        initialname=f"{base_name}_encrypted.wav"
+                        initialfile=os.path.basename(default_encrypted)
                     )
                     
                     if save_path:
@@ -1557,12 +1652,15 @@ Use the "💾 Save Encrypted File" button to save it.
                 
                 self.log_operation(f"Message encrypted and hidden using {algorithm}")
                 
+                # Store original filename before clearing fields
+                original_filename = os.path.basename(self.selected_file) if self.selected_file else "Unknown"
+                
                 # Clear text fields after successful encryption
                 self.clear_text_fields()
                 
                 messagebox.showinfo("🎉 Success - Ready to Save!", 
                     f"Message encrypted and hidden successfully!\n\n"
-                    f"📁 Original: {os.path.basename(self.selected_file)}\n"
+                    f"📁 Original: {original_filename}\n"
                     f"⚙️ Algorithm: {algorithm}\n"
                     f"🔐 Encryption: {'Enabled' if self.encryption_var.get() else 'Disabled'}\n\n"
                     f"💾 Click 'Save Encrypted File' to save the result!")
@@ -1605,7 +1703,7 @@ Use the "💾 Save Encrypted File" button to save it.
                     raise ValueError("Unsupported file format")
                 
                 if not encrypted_data:
-                    raise ValueError("No hidden message found in this file")
+                    raise ValueError("No hidden message detected in this file. Please ensure you selected the correct encrypted file (e.g., 'image_encrypted.png' not 'image.png').")
                 
                 self.progress_var.set(70)
                 self.status_var.set("🔄 Step 2/3: Decrypting message...")
@@ -1653,10 +1751,25 @@ Use the "💾 Save Encrypted File" button to save it.
             except Exception as e:
                 self.progress_var.set(0)
                 self.status_var.set("❌ Decryption failed")
-                error_msg = f"Error decrypting message: {str(e)}"
+                
+                # Provide more helpful error messages
+                error_str = str(e).lower()
+                if "impossible to detect" in error_str or "no hidden message" in error_str:
+                    error_msg = """No hidden message found! Common causes:
+
+🔍 TROUBLESHOOTING STEPS:
+1. Make sure you selected the ENCRYPTED file (e.g., 'image_encrypted.png')
+2. Verify you're using the same algorithm that was used for encryption
+3. Check that the file actually contains a hidden message
+4. Try a different steganography algorithm
+
+💡 TIP: After encrypting, use 'Save Encrypted File' to save the result, then select that saved file for decryption."""
+                else:
+                    error_msg = f"Error decrypting message: {str(e)}"
+                
                 self.results_text.delete("1.0", tk.END)
                 self.results_text.insert("1.0", f"❌ ERROR: {error_msg}")
-                messagebox.showerror("Error", error_msg)
+                messagebox.showerror("Decryption Failed", error_msg)
         
         threading.Thread(target=decrypt_reveal_worker, daemon=True).start()
     
@@ -1708,10 +1821,10 @@ Use the "💾 Save Encrypted File" button to save it.
 
     def clear_text_fields(self):
         """
-        Clear all text input fields after successful encryption operation.
+        Clear text input fields after successful encryption operation.
         
-        This method resets the user interface to prepare for the next operation
-        by clearing all input fields and resetting their state.
+        This method resets only the text inputs to prepare for the next operation
+        while keeping the selected file for saving operations.
         """
         # Clear message text area
         self.message_text.delete("1.0", tk.END)
@@ -1721,26 +1834,17 @@ Use the "💾 Save Encrypted File" button to save it.
         # Clear password field
         self.password_entry.delete(0, tk.END)
         
-        # Clear file information display
-        if hasattr(self, 'file_info_text'):
-            self.file_info_text.delete("1.0", tk.END)
-            self.file_info_text.insert("1.0", "No file selected. Please choose an image or audio file to begin.")
-            self.file_info_text.config(fg="#888888")
-        
-        # Reset selected file
-        self.selected_file = None
-        
-        # Clear preview frame
-        if hasattr(self, 'preview_frame'):
-            for widget in self.preview_frame.winfo_children():
-                widget.destroy()
+        # NOTE: We DON'T clear the selected file or file info as user may want to:
+        # 1. Save the encrypted result 
+        # 2. Use the same file for another operation
+        # 3. View the file information
         
         # Reset progress bar
         self.progress_var.set(0)
         self.status_var.set("Ready to process files...")
         
         # Log the field clearing action
-        self.log_operation("Text fields and selections cleared after successful encryption")
+        self.log_operation("Text input fields cleared after successful encryption")
 
     def log_operation(self, operation):
         """
